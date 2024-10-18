@@ -16,27 +16,8 @@ fn main() {
     let maps = Arc::new(Mutex::new(maps::parse_from_file(pid as i32).unwrap()));
 
     debugger.attach(pid).unwrap();
-    // debugger.add_breakpoint(0x144799ff0);
     debugger.stop_all().expect("Failed to stop all tasks");
-
-    // let mut hwbp = HardwareBreakpoint::new(0x401146, 0);
-    // hwbp.enable(pid).unwrap();
-
-    // debugger
-    //     .continue_all()
-    //     .expect("Failed to continue all tasks");
-    // let debugger = Arc::new(Mutex::new(debugger));
-    // let mut script = runtime::compile_script(
-    //     fs::read_to_string("script.rhai").unwrap(),
-    //     pid,
-    //     maps.clone(),
-    //     debugger.clone(),
-    // )
-    // .expect("Failed to compile script");
-    // loop {
-    //     debugger.lock().unwrap().wait(&script).unwrap();
-    // }
-
+    
     let debugger = Arc::new(Mutex::new(debugger));
 
     let do_recompile = Arc::new(Mutex::new(false));
