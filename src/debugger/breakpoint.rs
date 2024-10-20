@@ -21,7 +21,6 @@ impl Breakpoint {
         self.original_insn = (data & 0xff) as u8;
         ptrace::write(pid, self.addr, (data & !0xff) | 0xcc)?;
         self.enabled = true;
-        // println!("debug: wrote {:08x} to {:08x}", (data & !0xff) | 0xcc, self.addr);
         Ok(())
     }
 
@@ -29,11 +28,11 @@ impl Breakpoint {
         let data = ptrace::read(pid, self.addr)?;
         ptrace::write(pid, self.addr, (data & !0xff) | self.original_insn as usize)?;
         self.enabled = false;
-        // println!("debug: wrote {:08x} to {:08x}", (data & !0xff) | self.original_insn as usize, self.addr);
         Ok(())
     }
 }
 
+// the PID needs to be known for a breakpoint to be disabled. as such, breakpoints can't drop themselves
 impl Drop for Breakpoint {
     fn drop(&mut self) {
         if self.enabled {

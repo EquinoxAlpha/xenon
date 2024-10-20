@@ -9,9 +9,9 @@ pub struct Task {
 impl Task {
     pub fn new(pid: u32, id: u32, name: String) -> Task {
         Task {
-            pid: pid,
-            id: id,
-            name: name,
+            pid,
+            id,
+            name,
             running: true,
             exited: false,
         }

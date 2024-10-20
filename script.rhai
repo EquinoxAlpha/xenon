@@ -1,5 +1,5 @@
 // Sample script for the debug target in `./debuggee`.
-// Run with `cargo run -- $(pgrep debuggee_binary)`.
+// Run with `cargo run -- $(pgrep debuggee_binary) script.rhai`.
 // The debugger watches this file for changes. Edit the file and save to recompile and reload the script.
 //   - Any breakpoints previously set will be automatically removed.
 // The scripting language itself is Rhai. You can find the documentation at https://rhai.rs/book.
@@ -8,7 +8,8 @@
 // These work by placing an `int3` instruction (0xCC) at the break address.
 // There is a race condition that can occur if a function is called multiple times at once from different threads.
 //   - In practice, this only means that a breakpoint hit might not be detected.
-// It will not be fixed due to performance reasons and the relatively low impact.
+// It will not* be fixed due to performance reasons and the relatively low impact.
+// * - a feature flag might be added to enable a workaround in the future
 breakpoint(0x401146, |regs, task| { // Entry of shared_func - yours might be at a different address
     print(`Hit shared_func breakpoint from task ${task.pid}`);
 

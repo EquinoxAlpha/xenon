@@ -7,19 +7,11 @@ use anyhow::Result;
 
 pub static DR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
-// pub enum BreakpointCondition {
-//     Execute,
-//     Write,
-//     Read,
-//     ReadWrite,
-// }
-
 pub struct HardwareBreakpoint {
     pub addr: usize,
     pub enabled: bool,
-    // pub mask: u32,
     pub length: usize,
-    pub condition: usize, //BreakpointCondition,
+    pub condition: usize,
     pub dr: usize,
 }
 
@@ -77,16 +69,14 @@ impl HardwareBreakpoint {
     pub fn enable(&mut self, pid: u32) -> Result<()> {
         self.enabled = true;
 
-        let mut dr7 = ptrace::peek_user(pid, dr_offset(7))?; // Get the current value of DR7
-        ptrace::poke_user(pid, dr_offset(self.dr), self.addr)?; // Set the address to watch
+        let mut dr7 = ptrace::peek_user(pid, dr_offset(7))?;
+        ptrace::poke_user(pid, dr_offset(self.dr), self.addr)?; // set the address to watch
 
-        // Set local enable bit for appropriate DR
-        dr7 |= 1 << (2 * self.dr);
+        dr7 |= 1 << (2 * self.dr); // set local enable bit
 
-        // Set breakpoint condition
         let condition = self.condition & 0b11; // 0b00 = execute, 0b01 = write, 0b10 = read, 0b11 = read/write
-        dr7 &= !(0b11 << (16 + 4 * self.dr)); // clear bits 16-17
-        dr7 |= condition << (16 + 4 * self.dr);
+        dr7 &= !(0b11 << (16 + 4 * self.dr)); // clear bits 16-17 (condition)
+        dr7 |= condition << (16 + 4 * self.dr); // ...then set them to the correct value
 
         // Set length to self.length
         let length = match self.length {
@@ -96,10 +86,8 @@ impl HardwareBreakpoint {
             4 => 0b11,
             _ => unreachable!(),
         };
-        dr7 &= !(0b11 << (18 + 4 * self.dr)); // clear bits 18-19
-        dr7 |= length << (18 + 4 * self.dr);
-
-        // debug_print_dr7(dr7);
+        dr7 &= !(0b11 << (18 + 4 * self.dr)); // clear bits 18-19 (length)
+        dr7 |= length << (18 + 4 * self.dr); // ...then set them to the correct value
 
         ptrace::poke_user(pid, dr_offset(7), dr7)?;
 
@@ -109,13 +97,21 @@ impl HardwareBreakpoint {
     pub fn disable(&mut self, pid: u32) -> Result<()> {
         self.enabled = false;
 
-        let mut dr7 = ptrace::peek_user(pid, dr_offset(7))?; // Get the current value of DR7
+        let mut dr7 = ptrace::peek_user(pid, dr_offset(7))?;
 
-        // Clear local enable bit for appropriate DR
-        dr7 &= !(1 << (2 * self.dr));
+        dr7 &= !(1 << (2 * self.dr)); // clear local enable bit
 
         ptrace::poke_user(pid, dr_offset(7), dr7)?;
 
         Ok(())
+    }
+}
+
+// the PID needs to be known for a breakpoint to be disabled. as such, breakpoints can't drop themselves
+impl Drop for HardwareBreakpoint {
+    fn drop(&mut self) {
+        if self.enabled {
+            panic!("Hardware breakpoint was dropped while still enabled. This should never happen!");
+        }
     }
 }

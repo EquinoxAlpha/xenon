@@ -37,6 +37,8 @@ impl Debugger {
         let name = fs::read_to_string(format!("/proc/{}/comm", pid)).unwrap();
         let mut task = Task::new(pid, self.tasks.len() as u32, name.trim().to_string());
         task.running = true;
+
+        // does this need to be done?
         // match ptrace::seize(pid) {
         //     Ok(_) => (),
         //     Err(_) => {
@@ -58,17 +60,9 @@ impl Debugger {
         //     PTRACE_O_TRACECLONE | PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXEC,
         // )
         // .unwrap();
+        
         self.tasks.push(task);
     }
-
-    // pub fn add_breakpoint(&mut self, addr: usize) {
-    //     let mut bp = Breakpoint::new(addr);
-    //     self.stop_all().expect("Failed to stop all tasks");
-    //     bp.enable(self.tasks[0].pid)
-    //         .expect("Failed to enable breakpoint");
-    //     self.continue_all().expect("Failed to continue all tasks");
-    //     self.breakpoints.push(bp);
-    // }
 
     pub fn attach(&mut self, pid: u32) -> Result<()> {
         let mut tasks = vec![];
@@ -96,7 +90,6 @@ impl Debugger {
 
         for task in &mut tasks {
             task.running = false;
-            // println!("Attached to task {} ({})", task.id, task.name);
         }
 
         self.tasks.extend(tasks);
@@ -298,7 +291,7 @@ impl Debugger {
                             }
 
                             if !has_hit_bp {
-                                println!("warn: unknown SIGTRAP at 0x{:x}", regs.rip - 1);
+                                // println!("warn: unknown SIGTRAP at 0x{:x}", regs.rip - 1);
                                 ptrace::cont(task.pid)?;
                             }
                         }

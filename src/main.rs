@@ -10,8 +10,31 @@ mod debugger;
 mod runtime;
 mod util;
 
+fn print_usage(argv0: String) {
+    eprintln!("Usage: {} <pid> <path to script>", argv0);
+}
+
 fn main() {
-    let pid = std::env::args().nth(1).unwrap().parse::<u32>().unwrap();
+    let argv0 = std::env::args().nth(0).unwrap();
+    let pid = match std::env::args().nth(1) {
+        Some(pid) => pid.parse::<u32>().unwrap(),
+        None => {
+            print_usage(argv0);
+            return;
+        }
+    };
+    let script_path = match std::env::args().nth(2) {
+        Some(path) => path,
+        None => {
+            print_usage(argv0);
+            return;
+        }
+    };
+    let Ok(script_path) = fs::canonicalize(script_path) else {
+        eprintln!("Script file not found");
+        return;
+    };
+    
     let mut debugger = Debugger::new();
     let maps = Arc::new(Mutex::new(maps::parse_from_file(pid as i32).unwrap()));
 
@@ -21,7 +44,7 @@ fn main() {
     let debugger = Arc::new(Mutex::new(debugger));
 
     let do_recompile = Arc::new(Mutex::new(false));
-    watcher::watch_file("script.rhai", do_recompile.clone());
+    watcher::watch_file(&script_path, do_recompile.clone());
 
     let mut script = runtime::compile_script(
         fs::read_to_string("script.rhai").unwrap(),
@@ -41,7 +64,7 @@ fn main() {
         if *do_recompile.lock().unwrap() {
             *do_recompile.lock().unwrap() = false;
             match runtime::compile_script(
-                fs::read_to_string("script.rhai").unwrap(),
+                fs::read_to_string(&script_path).unwrap(),
                 pid,
                 maps.clone(),
                 debugger.clone(),
