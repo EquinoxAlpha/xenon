@@ -70,23 +70,23 @@ pub fn register_functions(
             .expect("Failed to continue all tasks");
     });
 
-    // todo: watchpoint support in src/debugger/mod.rs (query DR6?)
-    // // Convenience function for registering a watchpoint
-    // engine.register_fn("watchpoint", move |address: i64, length: i64, callback: FnPtr| {
-    //     println!("Adding watchpoint at 0x{:x} with length {}", address, length);
-    //     let mut debugger: std::sync::MutexGuard<'_, Debugger> = debugger_arc.lock().unwrap();
+    // Watchpoint registration
+    let debugger_arc = debugger.clone();
+    engine.register_fn("watchpoint", move |address: i64, length: i64, callback: FnPtr| {
+        println!("Adding watchpoint at 0x{:x} with length {}", address, length);
+        let mut debugger: std::sync::MutexGuard<'_, Debugger> = debugger_arc.lock().unwrap();
 
-    //     debugger.stop_all().expect("Failed to stop all tasks");
+        debugger.stop_all().expect("Failed to stop all tasks");
 
-    //     let mut hwbp = HardwareBreakpoint::new(address as _, DR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed), 0x11, length as _);
-    //     // hwbp.enable(pid).expect("Failed to enable hardware breakpoint");
-    //     for task in debugger.tasks.iter() {
-    //         hwbp.enable(task.pid as _).expect(format!("Failed to enable hardware breakpoint for task {}", task.pid).as_str());
-    //     }
-    //     debugger.hardware_breakpoints.push((hwbp, callback));
+        let mut hwbp = HardwareBreakpoint::new(address as _, DR_COUNTER.fetch_add(1, std::sync::atomic::Ordering::Relaxed), 0x11, length as _);
+        // hwbp.enable(pid).expect("Failed to enable hardware breakpoint");
+        for task in debugger.tasks.iter() {
+            hwbp.enable(task.pid as _).expect(format!("Failed to enable hardware breakpoint for task {}", task.pid).as_str());
+        }
+        debugger.hardware_breakpoints.push((hwbp, callback));
 
-    //     debugger.continue_all().expect("Failed to continue all tasks");
-    // });
+        debugger.continue_all().expect("Failed to continue all tasks");
+    });
 
     // Functions for reading integers of 1, 2, 4, and 8 bytes
     engine.register_fn("read64", move |address: i64| -> rhai::Dynamic {

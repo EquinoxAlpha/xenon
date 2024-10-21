@@ -24,9 +24,14 @@ The debugger watches the script for modifications, and will automatically reload
 * catch keyboard interrupt to cleanly exit
   - exiting via Ctrl+C leaves int3's and hardware breakpoints in the target, causing it to eventually terminate
   - a crude and temporary workaround is to cause a runtime error in the script
-* watchpoints
+* ~~watchpoints~~
+* callbacks on thread start/exit
 
 ...and probably more, not in that order.
+
+## known issues
+* there is a small chance that stopping all tasks will fail while adding any kind of breakpoint, crashing the debugger
+  - probably caused by a race condition involving ptrace somewhere?
 
 ## license
 GNU GPLv3.

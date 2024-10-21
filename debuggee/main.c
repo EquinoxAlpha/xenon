@@ -6,20 +6,17 @@
 #include <stdlib.h>
 #include <unistd.h>
 
-int shared_func(int x) { return ((x ^ 8) + 9) * 3; }
+static int incrementedEverySecond = 0;
+
+int shared_func(int x) { return ((x ^ 8) + 9) * 3 + incrementedEverySecond; }
 
 void *thread_func(void *arg) {
-  int i;
-  while (1) {
-    for (i = 0; i < 10; i++) {
-      printf("Thread %d: %d\n", (int)arg, shared_func(i));
-      usleep(1000000);
-    }
-  }
+  printf("Thread %d: %d\n", (int)arg, shared_func((int)arg));
+  usleep(1000000);
 }
 
 int main() {
-  pthread_t thread1, thread2;
+  pthread_t thread1, thread2, thread3;
   int i;
 
   printf("Address of main: %p\n", main);
@@ -32,7 +29,10 @@ int main() {
   while (1) {
     for (i = 0; i < 10; i++) {
       printf("Main: %d\n", shared_func(i));
+      pthread_create(&thread3, NULL, (void *)thread_func, (void *)3);
       usleep(1000000);
+      pthread_join(thread3, NULL);
+      incrementedEverySecond += 1;
     }
   }
 

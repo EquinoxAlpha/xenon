@@ -3,10 +3,7 @@ use std::fs;
 use anyhow::Result;
 use breakpoint::Breakpoint;
 use hardware::{HardwareBreakpoint, DR_COUNTER};
-use libc::{
-    PTRACE_EVENT_CLONE, PTRACE_EVENT_EXEC, PTRACE_EVENT_FORK, PTRACE_EVENT_VFORK,
-    PTRACE_O_TRACECLONE, PTRACE_O_TRACEEXEC, PTRACE_O_TRACEFORK, PTRACE_O_TRACEVFORK, WSTOPSIG,
-};
+use libc::{PTRACE_EVENT_CLONE, PTRACE_O_TRACECLONE, WSTOPSIG};
 use task::Task;
 
 use crate::{
@@ -34,33 +31,35 @@ impl Debugger {
     }
 
     fn add_task(&mut self, pid: u32) {
-        let name = fs::read_to_string(format!("/proc/{}/comm", pid)).unwrap();
+        let name = fs::read_to_string(format!("/proc/{pid}/comm")).unwrap();
         let mut task = Task::new(pid, self.tasks.len() as u32, name.trim().to_string());
-        task.running = true;
 
-        // does this need to be done?
-        // match ptrace::seize(pid) {
-        //     Ok(_) => (),
-        //     Err(_) => {
-        //         // println!("Failed to seize task {}", pid);
-        //         let mut task = Task::new(
-        //             pid,
-        //             self.tasks.len() as u32,
-        //             name.trim().to_string(),
-        //         );
-        //         task.running = true;
-        //         self.tasks.push(task);
-        //         return;
+        // for l in fs::read_to_string(format!("/proc/{pid}/status")).unwrap().lines() {
+        //     if l.contains("State") {
+        //         println!("{}", l);
         //     }
         // }
-        // ptrace::interrupt(pid).unwrap();
-        // signal::wait(pid).unwrap();
-        // ptrace::set_options(
-        //     pid,
-        //     PTRACE_O_TRACECLONE | PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXEC,
-        // )
-        // .unwrap();
-        
+
+        // apply our hwbp's to it
+        for (hwbp, _) in &mut self.hardware_breakpoints {
+            match hwbp.enable(pid as _) {
+                Err(_) => return,
+                _ => (),
+            }
+        }
+
+        match ptrace::set_options(pid, PTRACE_O_TRACECLONE) {
+            Err(_) => return,
+            _ => (),
+        }
+
+        match ptrace::cont(pid) {
+            Err(_) => return,
+            _ => (),
+        }
+
+        task.running = true;
+
         self.tasks.push(task);
     }
 
@@ -82,10 +81,7 @@ impl Debugger {
             ptrace::seize(subtask_pid)?;
             ptrace::interrupt(subtask_pid)?;
             signal::wait(subtask_pid)?;
-            ptrace::set_options(
-            subtask_pid,
-            PTRACE_O_TRACECLONE | PTRACE_O_TRACEFORK | PTRACE_O_TRACEVFORK | PTRACE_O_TRACEEXEC,
-            )?;
+            ptrace::set_options(subtask_pid, PTRACE_O_TRACECLONE)?;
         }
 
         for task in &mut tasks {
@@ -144,7 +140,6 @@ impl Debugger {
             }
             ptrace::interrupt(task.pid)?;
             signal::wait(task.pid)?;
-            // println!("Stopped task {} ({})", task.id, task.name);
             task.running = false;
         }
         Ok(())
@@ -152,7 +147,10 @@ impl Debugger {
 
     pub fn wait(&mut self, script: &Script) -> Result<()> {
         let mut to_add = vec![];
-        for task in &mut self.tasks {
+        'iteration: for task in &mut self.tasks {
+            if !task.running {
+                continue;
+            }
             let Ok(status) = signal::wait_nonblock(task.pid) else {
                 task.exited = true;
                 continue;
@@ -177,70 +175,46 @@ impl Debugger {
                     if (status >> 16) & 0xffff == PTRACE_EVENT_CLONE {
                         let new_pid = ptrace::get_event_message(task.pid)
                             .expect("Failed to get event message");
-                        println!("Task {} spawned new task {}", task.name, new_pid);
-                        // self.add_task(new_pid);
-                        to_add.push(new_pid); // avoid mutating the `tasks` vector while iterating
-                        ptrace::cont(new_pid).ok();
-                        ptrace::cont(task.pid)?;
-                        task.running = true;
-                        continue;
-                    }
-                    if (status >> 16) & 0xffff == PTRACE_EVENT_FORK {
-                        let new_pid = ptrace::get_event_message(task.pid)
-                            .expect("Failed to get event message");
-                        println!("Task {} forked new task {}", task.name, new_pid);
-                        // self.add_task(new_pid);
-                        to_add.push(new_pid); // avoid mutating the `tasks` vector while iterating
-                        ptrace::cont(new_pid).ok();
-                        ptrace::cont(task.pid)?;
-                        task.running = true;
-                        continue;
-                    }
-                    if (status >> 16) & 0xffff == PTRACE_EVENT_VFORK {
-                        let new_pid = ptrace::get_event_message(task.pid)
-                            .expect("Failed to get event message");
-                        println!("Task {} vforked new task {}", task.name, new_pid);
-                        // self.add_task(new_pid);
-                        to_add.push(new_pid); // avoid mutating the `tasks` vector while iterating
-                        ptrace::cont(task.pid)?;
-                        ptrace::cont(new_pid)?;
-                        task.running = true;
-                        continue;
-                    }
-                    if (status >> 16) & 0xffff == PTRACE_EVENT_EXEC {
-                        println!("Task {} executed new program", task.name);
-                        ptrace::cont(task.pid)?;
-                        task.running = true;
-                        continue;
+                        println!("Task {} (PID {}) spawned new task with PID {}", task.name, task.pid, new_pid);
+                        signal::wait(new_pid).unwrap();
+                        to_add.push((task.pid, new_pid));
+                        break;
                     }
 
                     let stop_code = WSTOPSIG(status);
                     match stop_code {
                         libc::SIGTRAP => {
-                            // signal::kill(main_task, libc::SIGSTOP)?; // make sure all other threads are stopped
-                            // signal::wait(main_task)?;
-                            // match ptrace::interrupt(main_task) {
-                            //     Ok(_) => {
-                            //         signal::wait(main_task)?;
-                            //     },
-                            //     _ => (),
-                            // }
-
-                            // self.stop_all();
-
                             let mut regs = match ptrace::get_regs(task.pid) {
                                 Ok(regs) => regs,
                                 Err(_) => {
-                                    // println!("Failed to get registers");
                                     ptrace::cont(task.pid).ok();
                                     continue;
                                 }
                             };
-                            let mut has_hit_bp = false;
 
-                            for (hwbp, callback) in &mut self.hardware_breakpoints {
-                                if hwbp.addr == regs.rip as usize {
-                                    //HWBPs don't need to be disabled
+                            let Ok(dr6) = ptrace::peek_user(task.pid, hardware::dr_offset(6))
+                            else {
+                                println!("Failed to read DR6");
+                                ptrace::cont(task.pid).ok();
+                                continue;
+                            };
+
+                            for i in 0..4 {
+                                if dr6 & (1 << i) != 0 {
+                                    let Some((_, callback)) =
+                                        self.hardware_breakpoints.iter().find(|bp| bp.0.dr == i)
+                                    else {
+                                        // println!("Unknown HWBP");
+                                        ptrace::poke_user(
+                                            task.pid,
+                                            hardware::dr_offset(6),
+                                            dr6 & !0xf,
+                                        )
+                                        .unwrap();
+                                        ptrace::cont(task.pid)?;
+                                        task.running = true;
+                                        continue 'iteration;
+                                    };
 
                                     callback
                                         .call::<()>(
@@ -253,47 +227,62 @@ impl Debugger {
                                         )
                                         .expect("Failed to call breakpoint callback");
 
+                                    ptrace::poke_user(task.pid, hardware::dr_offset(6), dr6 & !0xf)
+                                        .unwrap();
                                     ptrace::cont(task.pid)?;
-                                    has_hit_bp = true;
                                     task.running = true;
-                                    break;
+                                    continue 'iteration;
                                 }
                             }
 
-                            if !has_hit_bp {
-                                for (bp, callback) in &mut self.breakpoints {
-                                    if bp.addr == regs.rip as usize - 1 {
-                                        bp.disable(task.pid)?;
-                                        regs.rip -= 1;
+                            for (hwbp, callback) in &mut self.hardware_breakpoints {
+                                if hwbp.addr == regs.rip as usize {
+                                    callback
+                                        .call::<()>(
+                                            &script.engine,
+                                            &script.ast,
+                                            (
+                                                GPRegisters::from(regs),
+                                                runtime::types::Task::from(&mut *task),
+                                            ),
+                                        )
+                                        .expect("Failed to call breakpoint callback");
 
-                                        ptrace::set_regs(task.pid, &regs)?;
-
-                                        callback
-                                            .call::<()>(
-                                                &script.engine,
-                                                &script.ast,
-                                                (
-                                                    GPRegisters::from(regs),
-                                                    runtime::types::Task::from(&mut *task),
-                                                ),
-                                            )
-                                            .expect("Failed to call breakpoint callback");
-
-                                        ptrace::single_step(task.pid)?;
-                                        signal::wait(task.pid)?;
-                                        bp.enable(task.pid)?;
-                                        ptrace::cont(task.pid)?;
-                                        task.running = true;
-                                        has_hit_bp = true;
-                                        break;
-                                    }
+                                    ptrace::cont(task.pid)?;
+                                    task.running = true;
+                                    continue 'iteration;
                                 }
                             }
 
-                            if !has_hit_bp {
-                                // println!("warn: unknown SIGTRAP at 0x{:x}", regs.rip - 1);
-                                ptrace::cont(task.pid)?;
+                            for (bp, callback) in &mut self.breakpoints {
+                                if bp.addr == regs.rip as usize - 1 {
+                                    bp.disable(task.pid)?;
+                                    regs.rip -= 1;
+
+                                    ptrace::set_regs(task.pid, &regs)?;
+
+                                    callback
+                                        .call::<()>(
+                                            &script.engine,
+                                            &script.ast,
+                                            (
+                                                GPRegisters::from(regs),
+                                                runtime::types::Task::from(&mut *task),
+                                            ),
+                                        )
+                                        .expect("Failed to call breakpoint callback");
+
+                                    ptrace::single_step(task.pid)?;
+                                    signal::wait(task.pid)?;
+                                    bp.enable(task.pid)?;
+                                    ptrace::cont(task.pid)?;
+                                    task.running = true;
+                                    continue 'iteration;
+                                }
                             }
+
+                            // println!("warn: unknown SIGTRAP at 0x{:x}", regs.rip - 1);
+                            ptrace::cont(task.pid)?;
                         }
                         libc::SIGINT => {
                             println!("Task {} received SIGINT", task.name);
@@ -307,8 +296,16 @@ impl Debugger {
                 }
             }
         }
-        for pid in to_add {
+        for (parent, pid) in to_add {
             self.add_task(pid);
+            // no, I don't know how to work with the borrowchecker (or rather can't be bothered with working around it properly)
+            // but I do know how to make increasingly convoluted workarounds
+            self.tasks.iter_mut().for_each(|x| {
+                if x.pid == parent {
+                    ptrace::cont(parent).ok();
+                    x.running = true;
+                }
+            });
         }
         self.tasks.retain(|task| !task.exited);
         Ok(())

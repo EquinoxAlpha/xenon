@@ -9,14 +9,13 @@ pub static DR_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 pub struct HardwareBreakpoint {
     pub addr: usize,
-    pub enabled: bool,
     pub length: usize,
     pub condition: usize,
     pub dr: usize,
 }
 
 const WORD_SIZE: usize = std::mem::size_of::<usize>();
-const fn dr_offset(n: usize) -> usize {
+pub const fn dr_offset(n: usize) -> usize {
     return std::mem::offset_of!(libc::user, u_debugreg) + n * WORD_SIZE;
 }
 
@@ -58,7 +57,6 @@ impl HardwareBreakpoint {
 
         HardwareBreakpoint {
             addr,
-            enabled: false,
             // mask: 0,
             condition,
             length,
@@ -67,8 +65,6 @@ impl HardwareBreakpoint {
     }
 
     pub fn enable(&mut self, pid: u32) -> Result<()> {
-        self.enabled = true;
-
         let mut dr7 = ptrace::peek_user(pid, dr_offset(7))?;
         ptrace::poke_user(pid, dr_offset(self.dr), self.addr)?; // set the address to watch
 
@@ -95,8 +91,6 @@ impl HardwareBreakpoint {
     }
 
     pub fn disable(&mut self, pid: u32) -> Result<()> {
-        self.enabled = false;
-
         let mut dr7 = ptrace::peek_user(pid, dr_offset(7))?;
 
         dr7 &= !(1 << (2 * self.dr)); // clear local enable bit
@@ -104,14 +98,5 @@ impl HardwareBreakpoint {
         ptrace::poke_user(pid, dr_offset(7), dr7)?;
 
         Ok(())
-    }
-}
-
-// the PID needs to be known for a breakpoint to be disabled. as such, breakpoints can't drop themselves
-impl Drop for HardwareBreakpoint {
-    fn drop(&mut self) {
-        if self.enabled {
-            panic!("Hardware breakpoint was dropped while still enabled. This should never happen!");
-        }
     }
 }

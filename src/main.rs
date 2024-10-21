@@ -47,7 +47,7 @@ fn main() {
     watcher::watch_file(&script_path, do_recompile.clone());
 
     let mut script = runtime::compile_script(
-        fs::read_to_string("script.rhai").unwrap(),
+        fs::read_to_string(&script_path).unwrap(),
         pid,
         maps.clone(),
         debugger.clone(),
