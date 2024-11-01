@@ -1,0 +1,11 @@
+[package]
+name = "xenon3"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+anyhow = "1.0.92"
+libc = "0.2.161"
+log = "0.4.22"
+signal-hook = "0.3.17"
+simplelog = "0.12.2"
