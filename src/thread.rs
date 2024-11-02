@@ -1,6 +1,6 @@
 use crate::{registers::Registers, util::{self, signal::WaitStatus}};
 use anyhow::Result;
-use libc::{PTRACE_O_TRACECLONE, PTRACE_O_TRACEEXEC, PTRACE_O_TRACESYSGOOD};
+use libc::{PTRACE_O_TRACECLONE, PTRACE_O_TRACEEXEC, PTRACE_O_TRACEFORK, PTRACE_O_TRACESYSGOOD};
 
 #[derive(Debug, Clone, Copy, Eq, PartialEq)]
 pub enum ThreadState {
@@ -49,9 +49,9 @@ impl Thread {
     pub fn wait(&mut self) -> Result<WaitStatus> {
         let status = util::signal::wait(self.pid)?;
         self.state = match status {
-            WaitStatus::Stopped(_) => ThreadState::Stopped,
+            WaitStatus::Stopped(_) => ThreadState::Tracing,
             WaitStatus::Exited(_) => ThreadState::Exited,
-            WaitStatus::Signaled(_) => ThreadState::Tracing,
+            WaitStatus::Signaled(_) => ThreadState::Exited,
             WaitStatus::Running => ThreadState::Running,
         };
         Ok(status)
@@ -60,9 +60,9 @@ impl Thread {
     pub fn wait_nonblocking(&mut self) -> Result<WaitStatus> {
         let status = util::signal::wait_nonblock(self.pid)?;
         self.state = match status {
-            WaitStatus::Stopped(_) => ThreadState::Stopped,
+            WaitStatus::Stopped(_) => ThreadState::Tracing,
             WaitStatus::Exited(_) => ThreadState::Exited,
-            WaitStatus::Signaled(_) => ThreadState::Stopped,
+            WaitStatus::Signaled(_) => ThreadState::Exited,
             WaitStatus::Running => ThreadState::Running,
         };
         Ok(status)
@@ -98,6 +98,11 @@ impl Thread {
 
     pub fn set_regs(&mut self, regs: Registers) -> Result<()> {
         util::ptrace::set_regs(self.pid, &regs.into())?;
+        Ok(())
+    }
+
+    pub fn run_until_syscall(&mut self, signal: Option<i32>) -> Result<()> {
+        util::ptrace::run_until_syscall(self.pid, signal)?;
         Ok(())
     }
 }

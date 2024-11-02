@@ -1,11 +1,15 @@
 use anyhow::Result;
 
-use libc::{ptrace, user_regs_struct, PTRACE_ATTACH, PTRACE_CONT, PTRACE_DETACH, PTRACE_GETEVENTMSG, PTRACE_GETREGS, PTRACE_INTERRUPT, PTRACE_PEEKUSER, PTRACE_POKEUSER, PTRACE_SETOPTIONS, PTRACE_SETREGS};
+use libc::{
+    ptrace, ptrace_syscall_info, user_regs_struct, PTRACE_ATTACH, PTRACE_CONT, PTRACE_DETACH,
+    PTRACE_GETEVENTMSG, PTRACE_GETREGS, PTRACE_GET_SYSCALL_INFO, PTRACE_INTERRUPT, PTRACE_PEEKUSER,
+    PTRACE_POKEUSER, PTRACE_SEIZE, PTRACE_SETOPTIONS, PTRACE_SETREGS, PTRACE_SYSCALL,
+};
 use std::{ffi::c_void, mem::MaybeUninit, ptr};
 
 /// Start tracing the thread with the given PID without interrupting it.
 pub fn seize(pid: u32) -> Result<()> {
-    let res = unsafe { ptrace(PTRACE_ATTACH, pid, ptr::null_mut::<c_void>(), 0) };
+    let res = unsafe { ptrace(PTRACE_SEIZE, pid, ptr::null_mut::<c_void>(), 0) };
     if res == -1 {
         return Err(anyhow::anyhow!("Failed to attach to thread"));
     }
@@ -41,7 +45,7 @@ pub fn interrupt(pid: u32) -> Result<()> {
 
 /// Continue the thread with the given PID.
 pub fn cont(pid: u32, signal: Option<i32>) -> Result<()> {
-    let res = unsafe { ptrace(PTRACE_CONT, pid, signal.unwrap_or(0), 0) };
+    let res = unsafe { ptrace(PTRACE_CONT, pid, 0, signal.unwrap_or(0)) };
     if res == -1 {
         return Err(anyhow::anyhow!("Failed to continue execution"));
     }
@@ -51,7 +55,7 @@ pub fn cont(pid: u32, signal: Option<i32>) -> Result<()> {
 /// Fetch the registers of a stopped thread with the given PID.
 pub fn get_regs(pid: u32) -> Result<user_regs_struct> {
     let mut regs = MaybeUninit::<user_regs_struct>::uninit();
-    let res = unsafe { ptrace(PTRACE_GETREGS, pid, regs.as_mut_ptr() as *mut c_void, 0) };
+    let res = unsafe { ptrace(PTRACE_GETREGS, pid, 0, regs.as_mut_ptr() as *mut c_void) };
     if res == -1 {
         return Err(anyhow::anyhow!("Failed to fetch registers"));
     }
@@ -60,7 +64,14 @@ pub fn get_regs(pid: u32) -> Result<user_regs_struct> {
 
 /// Set the registers of a running thread with the given PID.
 pub fn set_regs(pid: u32, regs: &user_regs_struct) -> Result<()> {
-    let res = unsafe { ptrace(PTRACE_SETREGS, pid, regs as *const user_regs_struct as *mut c_void, 0) };
+    let res = unsafe {
+        ptrace(
+            PTRACE_SETREGS,
+            pid,
+            0,
+            regs as *const user_regs_struct as *mut c_void,
+        )
+    };
     if res == -1 {
         return Err(anyhow::anyhow!("Failed to set registers"));
     }
@@ -69,17 +80,16 @@ pub fn set_regs(pid: u32, regs: &user_regs_struct) -> Result<()> {
 
 /// Read memory from the USER area of a running thread with the given PID.
 pub fn read_user(pid: u32, addr: usize) -> Result<usize> {
-    let mut val = MaybeUninit::<usize>::uninit();
-    let res = unsafe { ptrace(PTRACE_PEEKUSER, pid, addr as *mut c_void, val.as_mut_ptr() as *mut c_void) };
+    let res = unsafe { ptrace(PTRACE_PEEKUSER, pid, addr, 0) };
     if res == -1 {
         return Err(anyhow::anyhow!("Failed to read user memory"));
     }
-    unsafe { Ok(val.assume_init()) }
+    Ok(res as usize)
 }
 
 /// Write memory to the USER area of a running thread with the given PID.
 pub fn write_user(pid: u32, addr: usize, val: usize) -> Result<()> {
-    let res = unsafe { ptrace(PTRACE_POKEUSER, pid, addr as *mut c_void, val as *mut c_void) };
+    let res = unsafe { ptrace(PTRACE_POKEUSER, pid, addr, val) };
     if res == -1 {
         return Err(anyhow::anyhow!("Failed to write user memory"));
     }
@@ -88,9 +98,17 @@ pub fn write_user(pid: u32, addr: usize, val: usize) -> Result<()> {
 
 pub fn get_event_message(pid: u32) -> Result<u64> {
     let mut val = MaybeUninit::<u64>::uninit();
-    let res = unsafe { ptrace(PTRACE_GETEVENTMSG, pid, val.as_mut_ptr() as *mut c_void, 0) };
+    let res = unsafe { ptrace(PTRACE_GETEVENTMSG, pid, 0, val.as_mut_ptr() as *mut c_void) };
     if res == -1 {
         return Err(anyhow::anyhow!("Failed to get event message"));
     }
     unsafe { Ok(val.assume_init()) }
+}
+
+pub fn run_until_syscall(pid: u32, signal: Option<i32>) -> Result<()> {
+    let res = unsafe { ptrace(PTRACE_SYSCALL, pid, 0, signal.unwrap_or(0)) };
+    if res == -1 {
+        return Err(anyhow::anyhow!("Failed to wait for syscall"));
+    }
+    Ok(())
 }

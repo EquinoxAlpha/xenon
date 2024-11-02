@@ -41,7 +41,7 @@ pub fn wait_nonblock(pid: u32) -> Result<WaitStatus> {
     let status = unsafe { status.assume_init() };
 
     if libc::WIFSTOPPED(status) {
-        Ok(WaitStatus::Stopped(libc::WSTOPSIG(status)))
+        Ok(WaitStatus::Stopped(status))
     } else if libc::WIFEXITED(status) {
         Ok(WaitStatus::Exited(libc::WEXITSTATUS(status)))
     } else if libc::WIFSIGNALED(status) {
