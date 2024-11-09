@@ -97,3 +97,42 @@ impl Into<user_regs_struct> for Registers {
         }
     }
 }
+
+use libc::user_fpregs_struct;
+pub struct FpRegisters {
+    pub cwd: u16,
+    pub swd: u16,
+    pub ftw: u16,
+    pub fop: u16,
+    pub rip: u64,
+    pub rdp: u64,
+    pub mxcsr: u32,
+    pub mxcr_mask: u32,
+    pub st_space: [f32; 32],
+    pub xmm_space: [f32; 64],
+    pub padding: [u32; 24],
+}
+
+impl From<user_fpregs_struct> for FpRegisters {
+    fn from(regs: user_fpregs_struct) -> Self {
+        Self {
+            cwd: regs.cwd,
+            swd: regs.swd,
+            ftw: regs.ftw,
+            fop: regs.fop,
+            rip: regs.rip,
+            rdp: regs.rdp,
+            mxcsr: regs.mxcsr,
+            mxcr_mask: regs.mxcr_mask,
+            st_space: unsafe { std::mem::transmute(regs.st_space) },
+            xmm_space: unsafe { std::mem::transmute(regs.xmm_space) },
+            padding: [0; 24],
+        }
+    }
+}
+
+impl From<FpRegisters> for user_fpregs_struct {
+    fn from(regs: FpRegisters) -> Self {
+        unsafe { std::mem::transmute(regs) }
+    }
+}

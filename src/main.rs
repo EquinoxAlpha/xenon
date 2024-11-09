@@ -1,3 +1,4 @@
+#![feature(try_trait_v2)]
 use std::sync::{mpsc, Arc, Mutex};
 
 use anyhow::Result;
@@ -23,7 +24,7 @@ pub enum Event {
 
 fn main() -> Result<()> {
     simplelog::TermLogger::init(
-        simplelog::LevelFilter::Debug,
+        simplelog::LevelFilter::Info,
         simplelog::Config::default(),
         simplelog::TerminalMode::Stdout,
         simplelog::ColorChoice::Auto,
@@ -60,6 +61,7 @@ fn main() -> Result<()> {
     let context = Context {
         debugger: Arc::new(Mutex::new(debugger)),
         maps: Arc::new(Mutex::new(MemoryMap::parse_maps(pid)?)),
+        tx,
     };
 
     let mut script = Script::new(&std::fs::read_to_string(&script_path)?, context.clone()).unwrap();
@@ -75,13 +77,13 @@ fn main() -> Result<()> {
                 break;
             },
             Ok(Event::FileModified) => {
-                info!("File modified");
                 {
                     context.debugger().stop_all()?;
                     context.debugger().clear_breakpoints()?;
                     context.debugger().callbacks.clear();
                     DR_COUNTER.store(0, std::sync::atomic::Ordering::Relaxed);
                 }
+                info!("Reloading script");
                 script = Script::new(&std::fs::read_to_string(&script_path)?, context.clone()).unwrap();
                 match script.run() {
                     Ok(_) => {},

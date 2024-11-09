@@ -60,3 +60,7 @@ pub fn get_tasks(pid: u32) -> Result<Vec<u32>> {
         })
         .collect())
 }
+
+pub fn process_exists(pid: u32) -> bool {
+    std::fs::exists(format!("/proc/{}", pid)).unwrap_or(false)
+}

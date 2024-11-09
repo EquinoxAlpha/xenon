@@ -1,9 +1,7 @@
 use anyhow::Result;
 
 use libc::{
-    ptrace, ptrace_syscall_info, user_regs_struct, PTRACE_ATTACH, PTRACE_CONT, PTRACE_DETACH,
-    PTRACE_GETEVENTMSG, PTRACE_GETREGS, PTRACE_GET_SYSCALL_INFO, PTRACE_INTERRUPT, PTRACE_PEEKUSER,
-    PTRACE_POKEUSER, PTRACE_SEIZE, PTRACE_SETOPTIONS, PTRACE_SETREGS, PTRACE_SYSCALL,
+    ptrace, ptrace_syscall_info, user_fpregs_struct, user_regs_struct, PTRACE_ATTACH, PTRACE_CONT, PTRACE_DETACH, PTRACE_GETEVENTMSG, PTRACE_GETFPREGS, PTRACE_GETREGS, PTRACE_GET_SYSCALL_INFO, PTRACE_INTERRUPT, PTRACE_PEEKUSER, PTRACE_POKEUSER, PTRACE_SEIZE, PTRACE_SETFPREGS, PTRACE_SETOPTIONS, PTRACE_SETREGS, PTRACE_SYSCALL
 };
 use std::{ffi::c_void, mem::MaybeUninit, ptr};
 
@@ -109,6 +107,25 @@ pub fn run_until_syscall(pid: u32, signal: Option<i32>) -> Result<()> {
     let res = unsafe { ptrace(PTRACE_SYSCALL, pid, 0, signal.unwrap_or(0)) };
     if res == -1 {
         return Err(anyhow::anyhow!("Failed to wait for syscall"));
+    }
+    Ok(())
+}
+
+pub(crate) fn get_fp_regs(pid: u32) -> Result<user_fpregs_struct> {
+    let mut regs = MaybeUninit::<user_fpregs_struct>::uninit();
+    let res = unsafe { ptrace(PTRACE_GETFPREGS, pid, 0, regs.as_mut_ptr() as *mut c_void) };
+    if res == -1 {
+        return Err(anyhow::anyhow!("Failed to fetch fp registers"));
+    }
+    unsafe { Ok(regs.assume_init()) }
+}
+
+pub(crate) fn set_fp_regs(pid: u32, fp_registers: &user_fpregs_struct) -> Result<()> {
+    let res = unsafe {
+        ptrace(PTRACE_SETFPREGS, pid, 0, fp_registers as *const _ as *mut c_void)
+    };
+    if res == -1 {
+        return Err(anyhow::anyhow!("Failed to set fp registers"));
     }
     Ok(())
 }

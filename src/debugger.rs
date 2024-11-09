@@ -1,11 +1,12 @@
 use crate::hwbp::{dr_offset, HardwareBreakpoint};
-use crate::runtime::{RhaiRegisters, RhaiThread};
+use crate::runtime::{RhaiFpRegisters, RhaiRegisters, RhaiThread};
 use crate::thread::{Thread, ThreadState, DEFAULT_PTRACE_OPTIONS};
 use crate::util;
 use crate::util::signal::WaitStatus;
 use anyhow::Result;
 use libc::{PTRACE_EVENT_CLONE, SIGTRAP, WSTOPSIG};
 use log::{debug, error, info};
+use rhai::Dynamic;
 
 use crate::runtime::{RuntimeCallback, Script};
 
@@ -78,6 +79,7 @@ impl Debugger {
     pub fn clear_breakpoints(&mut self) -> Result<()> {
         for thread in &mut self.threads {
             for breakpoint in &self.breakpoints {
+                debug!("(about to clear breakpoint) Thread state: {:?}", thread.state);
                 thread.clear_breakpoint(breakpoint)?;
                 debug!(
                     "Cleared breakpoint at {:#x} in thread {}",
@@ -153,6 +155,8 @@ impl Debugger {
                                 "Thread {} hit breakpoint {:#x} ({:?})",
                                 thread.pid, breakpoint.address, breakpoint.kind
                             );
+                            let regs = RhaiRegisters::from(&registers);
+                            let regs = Dynamic::from(regs).into_shared();
                             for cb in &self.callbacks {
                                 match cb {
                                     RuntimeCallback::Breakpoint(dr, cb) => {
@@ -161,7 +165,7 @@ impl Debugger {
                                                 &script.engine,
                                                 &script.ast,
                                                 (
-                                                    RhaiRegisters::from(&registers),
+                                                    regs.clone(),
                                                     RhaiThread::from(&*thread),
                                                 ),
                                             ) {
@@ -213,7 +217,7 @@ impl Debugger {
         }
         // Clean up any threads that exited or were detached
         self.threads.retain(|thread| {
-            !(thread.state == ThreadState::Detached || thread.state == ThreadState::Exited)
+            !(thread.state == ThreadState::Detached || thread.state == ThreadState::Exited || !util::procfs::process_exists(thread.pid))
         });
         self.threads.extend(new_threads);
         Ok(())
@@ -234,7 +238,7 @@ impl Drop for Debugger {
             }
             thread
                 .detach()
-                .expect("Failed to detach thread during debugger shutdown");
+                .ok();
         }
     }
 }

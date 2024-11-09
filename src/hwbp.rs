@@ -98,7 +98,7 @@ impl Thread {
     }
 
     pub fn clear_breakpoint(&mut self, breakpoint: &HardwareBreakpoint) -> Result<()> {
-        let mut dr7 = util::ptrace::read_user(self.pid, dr_offset(7))?;
+        let mut dr7 = util::ptrace::read_user(self.pid, dr_offset(7)).unwrap();
 
         dr7 &= !(1 << (2 * breakpoint.dr)); // clear local enable bit
 

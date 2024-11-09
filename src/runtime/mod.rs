@@ -1,14 +1,17 @@
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{mpsc, Arc, Mutex, MutexGuard};
 
 use anyhow::Result;
 use rhai::{Engine, AST};
 
-use crate::{debugger::Debugger, util::procfs::MemoryMap};
+use crate::{debugger::Debugger, util::procfs::MemoryMap, Event};
 
 pub mod mem;
 pub mod bp;
+mod io;
 mod regs;
 mod thread;
+mod http;
+mod flow;
 
 pub use regs::*;
 pub use thread::*;
@@ -17,17 +20,20 @@ pub use thread::*;
 pub struct Context {
     pub debugger: Arc<Mutex<Debugger>>,
     pub maps: Arc<Mutex<Vec<MemoryMap>>>,
+    pub tx: mpsc::Sender<Event>,
 }
 
 impl Context {
-    pub fn new(debugger: Arc<Mutex<Debugger>>, maps: Arc<Mutex<Vec<MemoryMap>>>) -> Self {
-        Self { debugger, maps }
+    pub fn new(debugger: Arc<Mutex<Debugger>>, maps: Arc<Mutex<Vec<MemoryMap>>>, tx: mpsc::Sender<Event>) -> Self {
+        Self { debugger, maps, tx }
     }
 
+    /// Get a lock on the memory maps
     pub fn maps(&self) -> MutexGuard<Vec<MemoryMap>> {
         self.maps.lock().unwrap()
     }
 
+    /// Get a lock on the debugger
     pub fn debugger(&self) -> MutexGuard<Debugger> {
         self.debugger.lock().unwrap()
     }
@@ -54,12 +60,17 @@ impl Script {
 
 pub fn register_types(engine: &mut Engine) {
     engine.build_type::<RhaiRegisters>();
+    engine.build_type::<RhaiFpRegisters>();
     engine.build_type::<RhaiThread>();
 }
 
 pub fn register_functions(engine: &mut Engine, context: Context) {
     bp::register_functions(engine, context.clone());
     mem::register_functions(engine, context.clone());
+    io::register_functions(engine, context.clone());
+    http::register_functions(engine);
+    regs::register_functions(engine, context.clone());
+    flow::register_functions(engine, context);
 }
 
 pub enum RuntimeCallback {

@@ -1,4 +1,4 @@
-use crate::{registers::Registers, util::{self, signal::WaitStatus}};
+use crate::{registers::{FpRegisters, Registers}, util::{self, signal::WaitStatus}};
 use anyhow::Result;
 use libc::{PTRACE_O_TRACECLONE, PTRACE_O_TRACEEXEC, PTRACE_O_TRACEFORK, PTRACE_O_TRACESYSGOOD};
 
@@ -104,5 +104,10 @@ impl Thread {
     pub fn run_until_syscall(&mut self, signal: Option<i32>) -> Result<()> {
         util::ptrace::run_until_syscall(self.pid, signal)?;
         Ok(())
+    }
+    
+    pub(crate) fn get_fp_regs(&self) -> Result<FpRegisters> {
+        let regs = util::ptrace::get_fp_regs(self.pid)?;
+        Ok(regs.into())
     }
 }

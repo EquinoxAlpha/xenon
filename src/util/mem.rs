@@ -1,4 +1,4 @@
-use std::mem::{self, MaybeUninit};
+use std::{ffi::c_void, mem::{self, MaybeUninit}};
 
 use anyhow::Result;
 use libc::{process_vm_readv, process_vm_writev, iovec};
@@ -22,9 +22,8 @@ pub fn read<T: Sized>(pid: u32, addr: usize) -> Result<T> {
 }
 
 pub fn write<T: Sized>(pid: u32, addr: usize, value: &T) -> Result<()> {
-    let mut buf = MaybeUninit::<T>::uninit();
     let local = vec![iovec {
-        iov_base: buf.as_mut_ptr() as _,
+        iov_base: unsafe { value as *const T as *const c_void as *mut c_void },
         iov_len: mem::size_of::<T>(),
     }];
     let remote = vec![iovec {
