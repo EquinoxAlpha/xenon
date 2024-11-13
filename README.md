@@ -24,7 +24,7 @@ The debugger watches the script for modifications, and will automatically reload
   - Hardware breakpoints (and watchpoints) are on x86 and x86_64 limited to a total of 4.
 * Split the debugger and script runtimes into separate libraries 
 * Write a DSL
-  - Rhai is fine, but for this use case has some problems
+  - Rhai as a general-purpose scripting language is fine, but for this use case has some problems
 
 ...and probably more, not in that order.
 
