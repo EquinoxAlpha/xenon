@@ -25,7 +25,6 @@ void make_get_request(int thread_id) {
     curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
     res = curl_easy_perform(curl);
     curl_easy_cleanup(curl);
-    // std::cout << "Thread " << thread_id << " read " << res << " bytes from google.com" << std::endl;
 }
 
 int main(int argc, char **argv) {
